@@ -105,7 +105,7 @@ export function ConverterCard() {
             const data = await res.json().catch(() => ({}));
             setErrorMessage(data.error || "Error al buscar calidades");
           }
-        } catch (error) {
+        } catch {
           setErrorMessage("Error de conexión");
         } finally {
           setIsFetchingResolutions(false);

@@ -61,7 +61,7 @@ export async function getTwitterVideoUrl(statusUrl: string): Promise<TwitterVide
         if (mp4Variants.length > 0) {
           videoUrl = mp4Variants[0].url;
           
-          variants = mp4Variants.map((v: any) => {
+          variants = mp4Variants.map((v: { url: string; bitrate?: number }) => {
             // Extract resolution from URL like /vid/avc1/480x852/
             const resMatch = v.url.match(/\/(\d+x\d+)\//);
             const resolution = resMatch ? resMatch[1] : "Default";

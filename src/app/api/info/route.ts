@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getYouTubeInfo, YouTubeFormat } from "@/lib/youtube";
-import { getTwitterVideoUrl, TwitterVideoVariant } from "@/lib/twitter";
+import { getYouTubeInfo } from "@/lib/youtube";
+import { getTwitterVideoUrl } from "@/lib/twitter";
 
 export interface ResolutionOption {
   id: string; // url for twitter, format_id for youtube
