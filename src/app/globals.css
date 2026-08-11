@@ -2,26 +2,89 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: 40 20% 97%;
+    --foreground: 220 15% 15%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 15% 15%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 15% 15%;
+    --primary: 220 65% 52%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 348 60% 56%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 220 14% 93%;
+    --muted-foreground: 220 10% 45%;
+    --accent: 155 45% 48%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 13% 90%;
+    --input: 220 13% 90%;
+    --ring: 220 65% 52%;
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 220 15% 10%;
+    --foreground: 40 20% 97%;
+    --card: 220 15% 12%;
+    --card-foreground: 40 20% 97%;
+    --popover: 220 15% 12%;
+    --popover-foreground: 40 20% 97%;
+    --primary: 220 65% 52%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 348 60% 56%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 220 15% 20%;
+    --muted-foreground: 220 10% 60%;
+    --accent: 155 45% 48%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 15% 20%;
+    --input: 220 15% 20%;
+    --ring: 220 65% 52%;
   }
 }
 
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
+/* Subtle background pattern */
+.bg-pattern {
+  background-color: hsl(var(--background));
+  background-image:
+    radial-gradient(at 20% 30%, hsla(220, 60%, 85%, 0.15) 0px, transparent 50%),
+    radial-gradient(at 80% 70%, hsla(348, 55%, 85%, 0.12) 0px, transparent 50%),
+    radial-gradient(at 50% 50%, hsla(155, 40%, 85%, 0.08) 0px, transparent 50%);
+}
+
+/* Smooth transitions for interactive elements */
+.transition-smooth {
+  @apply transition-all duration-300 ease-in-out;
+}
+
+/* Glass effect for cards */
+.glass-card {
+  @apply bg-white/80 dark:bg-black/40 backdrop-blur-xl border border-black/5 dark:border-white/5 shadow-[0_8px_32px_rgba(0,0,0,0.06)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.4)];
+}
+
+/* Loading spinner */
+@keyframes spin-smooth {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.spinner {
+  animation: spin-smooth 0.8s linear infinite;
 }
