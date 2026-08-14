@@ -4,7 +4,9 @@ import { useState, useCallback, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { FormatSelector, type Format } from "@/components/FormatSelector";
 import { DownloadButton, type DownloadState } from "@/components/DownloadButton";
-import { LinkIcon, AlertCircle, Loader2, Download } from "lucide-react";
+import { DownloadProgressButton, IDLE_PROGRESS, type Progress } from "@/components/DownloadProgressButton";
+import { FRAMED_MEDIA_TYPE, readFrames } from "@/lib/downloadProtocol";
+import { LinkIcon, AlertCircle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { Button } from "@/components/ui/button";
@@ -15,7 +17,11 @@ interface ResolutionOption {
   id: string;
   resolution: string;
   label: string;
+  sizeBytes?: number;
 }
+
+// Identifica la descarga que no viene de un botón de resolución (MP3 y fallback).
+const DEFAULT_DOWNLOAD_ID = "__default__";
 
 // Custom brand icons (not available in lucide-react)
 function YoutubeIcon({ className }: { className?: string }) {
@@ -71,6 +77,8 @@ export function ConverterCard() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [resolutions, setResolutions] = useState<ResolutionOption[] | null>(null);
   const [isFetchingResolutions, setIsFetchingResolutions] = useState(false);
+  const [activeDownloadId, setActiveDownloadId] = useState<string | null>(null);
+  const [progress, setProgress] = useState<Progress>(IDLE_PROGRESS);
   const { t } = useLanguage();
 
   // Detect platform on URL change
@@ -121,6 +129,8 @@ export function ConverterCard() {
     if (!url.trim() || !platform) return;
 
     setDownloadState("loading");
+    setActiveDownloadId(qualityId ?? DEFAULT_DOWNLOAD_ID);
+    setProgress(IDLE_PROGRESS);
     setErrorMessage(null);
 
     try {
@@ -143,8 +153,62 @@ export function ConverterCard() {
         if (match) filename = match[1];
       }
 
-      // Create a blob from the response and trigger download
-      const blob = await response.blob();
+      if (!response.body) throw new Error("La respuesta llegó vacía");
+
+      const reader = response.body.getReader();
+      const chunks: BlobPart[] = [];
+      let blobType = response.headers.get("Content-Type") ?? "application/octet-stream";
+      let received = 0;
+      let lastRender = 0;
+
+      // Un video grande llega en miles de chunks; renderizar en cada uno satura
+      // el hilo principal sin que el usuario note la diferencia.
+      const publish = (next: Progress, force = false) => {
+        const now = Date.now();
+        if (!force && now - lastRender < 150) return;
+        lastRender = now;
+        setProgress(next);
+      };
+
+      // El video llega con las líneas de progreso por delante; el resto de los
+      // formatos son bytes crudos desde el primer chunk.
+      if (response.headers.get("Content-Type") === FRAMED_MEDIA_TYPE) {
+        let last: Progress = { phase: "downloading", bytes: 0 };
+
+        const { leftover, ready } = await readFrames(reader, (frame) => {
+          last =
+            frame.type === "merging"
+              ? { ...last, phase: "merging" }
+              : { phase: "downloading", bytes: frame.bytes, total: frame.totalBytes, speed: frame.speed };
+          publish(last, frame.type === "merging");
+        });
+        filename = ready.filename;
+        blobType = ready.contentType;
+
+        if (leftover.length > 0) {
+          chunks.push(leftover);
+          received = leftover.length;
+        }
+        publish({ phase: "transferring", bytes: received, total: ready.sizeBytes }, true);
+
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          received += value.length;
+          publish({ phase: "transferring", bytes: received, total: ready.sizeBytes });
+        }
+      } else {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          received += value.length;
+          publish({ phase: "transferring", bytes: received });
+        }
+      }
+
+      const blob = new Blob(chunks, { type: blobType });
       const downloadUrl = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = downloadUrl;
@@ -155,9 +219,11 @@ export function ConverterCard() {
       window.URL.revokeObjectURL(downloadUrl);
 
       setDownloadState("success");
+      setActiveDownloadId(null);
       setTimeout(() => setDownloadState("idle"), 3000);
     } catch (error) {
       setDownloadState("error");
+      setActiveDownloadId(null);
       setErrorMessage(error instanceof Error ? error.message : "Error al procesar la descarga");
       setTimeout(() => setDownloadState("idle"), 4000);
     }
@@ -246,15 +312,15 @@ export function ConverterCard() {
           ) : resolutions && resolutions.length > 0 ? (
             <div className="flex flex-col gap-2.5 animate-scale-in">
               {resolutions.map((res) => (
-                <Button 
+                <DownloadProgressButton
                   key={res.id}
+                  label={res.label}
+                  downloading={downloadState === "loading" && activeDownloadId === res.id}
+                  progress={progress}
+                  fallbackTotal={res.sizeBytes}
                   onClick={() => handleDownload(res.id)}
                   disabled={downloadState === "loading"}
-                  className="w-full rounded-xl bg-[#0ea5e9] hover:bg-[#0284c7] text-white shadow-md transition-all h-12 flex items-center justify-center gap-2"
-                >
-                  <Download className="w-5 h-5" />
-                  <span className="font-semibold text-[15px]">Descargar {res.label}</span>
-                </Button>
+                />
               ))}
             </div>
           ) : (
@@ -262,6 +328,7 @@ export function ConverterCard() {
               state={downloadState}
               onClick={() => handleDownload()}
               disabled={!isValidUrl || downloadState === "loading"}
+              receivedBytes={progress.bytes}
             />
           )
         ) : (
@@ -269,6 +336,7 @@ export function ConverterCard() {
             state={downloadState}
             onClick={() => handleDownload()}
             disabled={!isValidUrl || downloadState === "loading"}
+            receivedBytes={progress.bytes}
           />
         )}
 

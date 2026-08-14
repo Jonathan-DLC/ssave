@@ -68,12 +68,19 @@ const config: Config = {
           "0%": { transform: "scale(0.95)", opacity: "0" },
           "100%": { transform: "scale(1)", opacity: "1" },
         },
+        // Barrido para el progreso sin total conocido: la respuesta llega
+        // como chunked y no siempre hay un tamaño estimado.
+        "progress-sweep": {
+          "0%": { transform: "translateX(-60%)" },
+          "100%": { transform: "translateX(260%)" },
+        },
       },
       animation: {
         "fade-in": "fade-in 0.5s ease-out forwards",
         "pulse-soft": "pulse-soft 2s ease-in-out infinite",
         shake: "shake 0.4s ease-in-out",
         "scale-in": "scale-in 0.3s ease-out forwards",
+        "progress-sweep": "progress-sweep 1.4s ease-in-out infinite",
       },
     },
   },
