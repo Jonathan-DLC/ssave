@@ -1,6 +1,6 @@
 "use client";
 
-import { cn } from "@/lib/utils";
+import { cn, formatBytes } from "@/lib/utils";
 import { Download, Check, X, Loader2 } from "lucide-react";
 
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -11,9 +11,10 @@ interface DownloadButtonProps {
   state: DownloadState;
   onClick: () => void;
   disabled?: boolean;
+  receivedBytes?: number;
 }
 
-export function DownloadButton({ state, onClick, disabled }: DownloadButtonProps) {
+export function DownloadButton({ state, onClick, disabled, receivedBytes = 0 }: DownloadButtonProps) {
   const { t } = useLanguage();
   const isClickable = state === "idle" || state === "error";
 
@@ -23,7 +24,7 @@ export function DownloadButton({ state, onClick, disabled }: DownloadButtonProps
       onClick={isClickable ? onClick : undefined}
       disabled={disabled || !isClickable}
       className={cn(
-        "w-full h-12 rounded-xl text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2",
+        "relative overflow-hidden w-full h-12 rounded-xl text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         "active:scale-[0.98]",
         {
@@ -53,8 +54,19 @@ export function DownloadButton({ state, onClick, disabled }: DownloadButtonProps
       )}
       {state === "loading" && (
         <>
-          <Loader2 className="w-4 h-4 spinner" />
-          <span>{t("downloading")}</span>
+          {/* Sin tamaño estimado en MP3, el barrido indica actividad sin fingir un porcentaje. */}
+          <span aria-hidden className="absolute inset-0">
+            <span className="block h-full w-1/3 bg-white/20 animate-progress-sweep" />
+          </span>
+          <span className="relative flex items-center gap-2">
+            <Loader2 className="w-4 h-4 spinner" />
+            <span>{t("downloading")}</span>
+            {receivedBytes > 0 && (
+              <span className="text-xs font-medium tabular-nums opacity-85">
+                {formatBytes(receivedBytes)}
+              </span>
+            )}
+          </span>
         </>
       )}
       {state === "success" && (
