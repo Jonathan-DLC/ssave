@@ -1,7 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getYouTubeInfo, getYouTubeDirectUrl, sanitizeFilename, streamYouTubeVideo } from "@/lib/youtube";
+import { PassThrough, Readable } from "stream";
+import { getYouTubeInfo, getYouTubeDirectUrl, sanitizeFilename, downloadYouTubeVideo, classifyYouTubeError, type YouTubeErrorKind } from "@/lib/youtube";
 import { getTwitterVideoUrl } from "@/lib/twitter";
 import { transcodeToMp3Stream } from "@/lib/ffmpeg";
+import { FRAMED_MEDIA_TYPE, type DownloadFrame } from "@/lib/downloadProtocol";
+
+// yt-dlp y ffmpeg son binarios: no corren en el runtime edge.
+export const runtime = "nodejs";
+// Techo de Fluid Compute en plan Hobby. Videos largos igual se cortan acá.
+export const maxDuration = 300;
+
+// El merge normalmente da mp4, pero si yt-dlp cae a otro contenedor conviene
+// declararlo de verdad en vez de mentir con video/mp4.
+const MEDIA_TYPES: Record<string, string> = {
+  mp4: "video/mp4",
+  mkv: "video/x-matroska",
+  webm: "video/webm",
+};
+
+const YOUTUBE_ERRORS: Record<YouTubeErrorKind, { status: number; message: string }> = {
+  blocked: { status: 429, message: "YouTube está bloqueando al servidor. Probá de nuevo en unos minutos." },
+  private: { status: 403, message: "El video es privado o requiere membresía." },
+  unavailable: { status: 404, message: "El video no existe o fue eliminado." },
+  unknown: { status: 500, message: "Error al procesar YouTube." },
+};
 
 type Platform = "youtube" | "twitter" | null;
 
@@ -30,12 +52,9 @@ export async function POST(request: NextRequest) {
     // Handle YouTube
     if (platform === "youtube") {
       try {
-        const info = await getYouTubeInfo(url);
-        const filename = sanitizeFilename(info.title);
-        const extension = format;
-        const contentType = format === "mp3" ? "audio/mpeg" : "video/mp4";
-
         if (format === "mp3") {
+          const info = await getYouTubeInfo(url);
+          const filename = sanitizeFilename(info.title);
           const directUrl = await getYouTubeDirectUrl(url, "mp3");
           const passThrough = transcodeToMp3Stream(directUrl);
           // Convert Node stream to Web ReadableStream
@@ -53,23 +72,52 @@ export async function POST(request: NextRequest) {
           return new NextResponse(readableStream, {
             headers: {
               "Content-Type": "audio/mpeg",
-              "Content-Disposition": `attachment; filename="${encodeURIComponent(filename)}.${extension}"`,
+              "Content-Disposition": `attachment; filename="${encodeURIComponent(filename)}.mp3"`,
             },
           });
         }
 
-        // For MP4, use the streamYouTubeVideo helper which merges video+audio via yt-dlp to stdout
-        const stream = streamYouTubeVideo(url, qualityId);
+        // La respuesta empieza a salir de inmediato con líneas de progreso y
+        // termina con los bytes del archivo. Ver src/lib/downloadProtocol.ts.
+        const body = new PassThrough();
 
-        return new NextResponse(stream, {
+        const send = (frame: DownloadFrame) => {
+          if (!body.writableEnded) body.write(`${JSON.stringify(frame)}\n`);
+        };
+
+        // Deliberadamente sin await: la respuesta tiene que volver ya para que
+        // el cliente empiece a leer el progreso.
+        (async () => {
+          try {
+            const media = await downloadYouTubeVideo(url, qualityId, send);
+
+            send({
+              type: "ready",
+              sizeBytes: media.sizeBytes,
+              filename: `${sanitizeFilename(media.title)}.${media.ext}`,
+              contentType: MEDIA_TYPES[media.ext] ?? "application/octet-stream",
+            });
+
+            media.stream.pipe(body);
+          } catch (error) {
+            console.error("YouTube error:", error);
+            // Los headers ya salieron, así que el fallo viaja como frame en vez
+            // de como código de estado.
+            send({ type: "error", message: YOUTUBE_ERRORS[classifyYouTubeError(error)].message });
+            body.end();
+          }
+        })();
+
+        return new NextResponse(Readable.toWeb(body) as ReadableStream, {
           headers: {
-            "Content-Type": contentType,
-            "Content-Disposition": `attachment; filename="${encodeURIComponent(filename)}.${extension}"`,
+            "Content-Type": FRAMED_MEDIA_TYPE,
+            "Cache-Control": "no-store",
           },
         });
       } catch (error) {
         console.error("YouTube error:", error);
-        return NextResponse.json({ error: "Error al procesar YouTube." }, { status: 500 });
+        const { status, message } = YOUTUBE_ERRORS[classifyYouTubeError(error)];
+        return NextResponse.json({ error: message }, { status });
       }
     }
 
